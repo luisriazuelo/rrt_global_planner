@@ -50,7 +50,6 @@ set(dependencies
 
 add_library(${library_name} SHARED
   src/rrt_global_planner.cpp
-  src/TreeNode.cpp
 )
 
 ament_target_dependencies(${library_name}
