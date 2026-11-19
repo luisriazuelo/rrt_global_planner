@@ -17,10 +17,15 @@
 #include "rclcpp_lifecycle/lifecycle_publisher.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 
-#include "rrt_global_planner/TreeNode.hpp"
-
 namespace rrt_global_planner
 {
+
+struct TreeNode
+{
+  int x;       // map cell x
+  int y;       // map cell y
+  int parent;  // index of the parent in the tree vector (-1 for the root)
+};
 
 class RRTPlanner : public nav2_core::GlobalPlanner
 {
@@ -61,10 +66,17 @@ private:
   // Global frame of the costmap
   std::string global_frame_, name_;
 
-  double max_samples_;
-  double dist_th_;
-  double max_dist_;
-  double resolution_;
+  // Parameters
+  double  max_samples_;
+  double  dist_th_;
+  double  max_dist_;
+
+  int seed_{-1};
+  int max_cost_{253};
+  int last_iters_{0};
+  int last_nodes_{0};
+
+
 
   rclcpp_lifecycle::LifecyclePublisher<visualization_msgs::msg::Marker>::SharedPtr marker_pub_;
 
@@ -80,6 +92,9 @@ private:
                                     std::vector<std::vector<int>>& sol);
   void fillMarkerMsg(const std::string frame_id, const std::string ns, const int id,
                     const int type, visualization_msgs::msg::Marker& msg);
+
+  void visualizeTree(const std::vector<TreeNode> & tree);
+
 
 };
 
