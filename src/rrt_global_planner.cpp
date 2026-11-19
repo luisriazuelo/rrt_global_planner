@@ -1,4 +1,9 @@
-
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <random>
+#include <vector>
+//
 #include <cmath>
 #include <string>
 #include <memory>
@@ -38,16 +43,21 @@ void RRTPlanner::configure(
     node_, name_ + ".max_dist", rclcpp::ParameterValue(
       0.5));
   nav2_util::declare_parameter_if_not_declared(
-    node_, name_ + ".resolution", rclcpp::ParameterValue(
-      0.05));    
+    node_, name_ + ".seed", rclcpp::ParameterValue(-1));
 
-      node_->get_parameter(name_ + ".max_samples", max_samples_);
+  nav2_util::declare_parameter_if_not_declared(
+    node_, name_ + ".max_cost", rclcpp::ParameterValue(253));
+
+  node_->get_parameter(name_ + ".max_samples", max_samples_);
   node_->get_parameter(name_ + ".dist_th", dist_th_);
   node_->get_parameter(name_ + ".max_dist", max_dist_);
-  node_->get_parameter(name_ + ".resolution", resolution_);
+  node_->get_parameter(name_ + ".seed", seed_);
+
+  node_->get_parameter(name_ + ".max_cost", max_cost_); 
 
   marker_pub_ = node_->create_publisher<visualization_msgs::msg::Marker>(
     "rrt_markers", rclcpp::SystemDefaultsQoS());
+
 }
 
 void RRTPlanner::cleanup()
@@ -130,34 +140,76 @@ nav_msgs::msg::Path RRTPlanner::createPlan(
   return global_path;
 }
 
-bool RRTPlanner::computeRRT(const std::vector<int> start, const std::vector<int> goal, 
-                            std::vector<std::vector<int>>& sol){
+// ---------------------------------------------------------------------------
+// RRTPlanner::computeRRT
+// ---------------------------------------------------------------------------
 
-    //Initialize random number generator
-    srand(time(NULL));
-        
+bool RRTPlanner::computeRRT(const std::vector<int> start, const std::vector<int> goal,
+                            std::vector<std::vector<int>>& sol)
+{
+    sol.clear();
+
+    // Initialize random number generator
+    std::mt19937 gen(seed_ >= 0 ? static_cast<unsigned int>(seed_) : std::random_device{}());
+    const int size_x = static_cast<int>(costmap_->getSizeInCellsX());
+    const int size_y = static_cast<int>(costmap_->getSizeInCellsY());
+    std::uniform_int_distribution<int> rand_x(0, size_x - 1);
+    std::uniform_int_distribution<int> rand_y(0, size_y - 1);
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
+
+    // Parameters are in meters: convert them to cells
+    const double res = costmap_->getResolution();
+    const double max_step = std::max(1.0, max_dist_ / res);   // Steer step (at least one cell)
+    const double dist_th_cells = dist_th_ / res;              // goal distance threshold
+
     // Initialize the tree with the starting point in map coordinates
-    TreeNode *itr_node = new TreeNode(start); 
+    std::vector<TreeNode> tree;
+    tree.push_back({start[0], start[1], -1});
 
+    bool finished = false;
+    int goal_node = -1;   // index of the tree node that connects to the goal
 
-    bool finished = false; 
-    
-    // implement RRT here!
+    // Trivial case: the goal is already reachable from the start
+    if (distance(start[0], start[1], goal[0], goal[1]) < dist_th_cells &&
+        obstacleFree(start[0], start[1], goal[0], goal[1]))
+    {
+        finished = true;
+        goal_node = 0;
+    }
 
+    const int max_it = static_cast<int>(max_samples_);
+    int it = 0;
+    for (it = 0; it < max_it && !finished; ++it) {
 
+        // 1. SampleFree: goal with a random free cell
+  
+        // 2. Nearest node of the tree (squared distance, no sqrt needed)
+ 
+        // 3. Steer: move from near towards the sample at most max_step cells
 
+        // 4. ObstacleFree: add the node only if the segment near-new is collision free
+ 
+        // 5. Is the goal reachable from the new node?
+       
+    }
+
+    // Build the solution: goal side -> start side, without the start node (root)
+    if (finished) {
+        for (int i = goal_node; tree[i].parent != -1; i = tree[i].parent) {
+            sol.push_back({tree[i].x, tree[i].y});
+        }
+    }
+
+    // Metrics for the log of createPlan
+    last_iters_ = it;
+    last_nodes_ = static_cast<int>(tree.size());
 
     // Visualization in RViz
-    //visualizeSolTree(start, goal, sol);
-    
-    // Print Tree
-    //itr_node->printTree();
-   
-    
-    itr_node->~TreeNode();
+    visualizeTree(tree);
 
     return finished;
 }
+
 
 bool RRTPlanner::obstacleFree(const unsigned int x0, const unsigned int y0, 
                             const unsigned int x1, const unsigned int y1){
@@ -183,7 +235,7 @@ bool RRTPlanner::obstacleFree(const unsigned int x0, const unsigned int y0,
     unsigned int b = y0;
     unsigned int end = da;
     for (unsigned int i=0; i<end; i++){
-        if (costmap_->getCost(a, b) != nav2_costmap_2d::FREE_SPACE){  // to include cells with inflated cost
+        if (costmap_->getCost(a, b) >= max_cost_){  
             return false;
         }else{
             if (p >= 0){
@@ -219,57 +271,31 @@ void RRTPlanner::getPlan(const std::vector<std::vector<int>> sol, nav_msgs::msg:
     }
 }
 
-void RRTPlanner::visualizeSolTree(const std::vector<int>& start, const std::vector<int>& goal,
-                                    std::vector<std::vector<int>>& sol){
-    // std::cout << "Visualize tree solution: " << sol.size() << std::endl;
+void RRTPlanner::visualizeTree(const std::vector<TreeNode> & tree)
+{
+  visualization_msgs::msg::Marker m;
+  fillMarkerMsg(global_frame_, "full_tree", 4,
+    visualization_msgs::msg::Marker::LINE_LIST, m);
+  m.scale.x = 0.02;
+  m.color.r = 0.0; m.color.g = 0.6; m.color.b = 0.0; m.color.a = 0.4;
 
-    visualization_msgs::msg::Marker solTree;
-    geometry_msgs::msg::Point marker_point;
-    solTree.color.g = 0.0; solTree.color.r = 0.0; solTree.color.b = 1.0; solTree.color.a = 1.0;
-    solTree.scale.x = 0.1;
-    fillMarkerMsg(global_frame_, "tree", 3, visualization_msgs::msg::Marker::LINE_LIST, solTree);
-    
-    //include start point to include line between start and first point in the tree
-    if (sol.size() != 0){
-        costmap_->mapToWorld(start[0], start[1], marker_point.x, marker_point.y);
-        solTree.points.push_back(marker_point);
+  for (size_t i = 1; i < tree.size(); ++i) {
+    if (tree[i].parent < 0) {
+      continue;
     }
-    for (int i = sol.size()-1; i>=0; i--){  // inverse order
-        if (i == sol.size() - 1){
-            costmap_->mapToWorld(sol[i][0], sol[i][1], marker_point.x, marker_point.y);
-            solTree.points.push_back(marker_point);
-        }else{
-            // include each pair of points to draw a line
-            costmap_->mapToWorld(sol[i+1][0], sol[i+1][1], marker_point.x, marker_point.y);
-            solTree.points.push_back(marker_point);
-            costmap_->mapToWorld(sol[i][0], sol[i][1], marker_point.x, marker_point.y);
-            solTree.points.push_back(marker_point);
-        }
-    }
-    // include line between last point in the tree and the goal
-    if (sol.size() != 0){
-        int i = sol.size()-1;
-        costmap_->mapToWorld(sol[0][0], sol[0][1], marker_point.x, marker_point.y);
-        solTree.points.push_back(marker_point);
-        costmap_->mapToWorld(goal[0], goal[1], marker_point.x, marker_point.y);
-        solTree.points.push_back(marker_point);
-    }
-
-    marker_pub_->publish(solTree);
-
+    geometry_msgs::msg::Point a, b;
+    costmap_->mapToWorld(
+      static_cast<unsigned int>(tree[tree[i].parent].x),
+      static_cast<unsigned int>(tree[tree[i].parent].y), a.x, a.y);
+    costmap_->mapToWorld(
+      static_cast<unsigned int>(tree[i].x),
+      static_cast<unsigned int>(tree[i].y), b.x, b.y);
+    m.points.push_back(a);
+    m.points.push_back(b);
+  }
+  marker_pub_->publish(m);   // same id on every call -> RViz replaces the old tree
 }
 
-void RRTPlanner::fillMarkerMsg(const std::string frame_id, const std::string ns, const int id,
-                    const int type, visualization_msgs::msg::Marker& msg){
-    
-    msg.header.frame_id = frame_id;
-    msg.header.stamp = node_->now();
-    msg.ns = ns;
-    msg.action = visualization_msgs::msg::Marker::ADD;
-    msg.pose.orientation.w = 1.0;
-    msg.id = id;
-    msg.type = type;
-}
 
 }  // namespace rrt_global_planner
 
