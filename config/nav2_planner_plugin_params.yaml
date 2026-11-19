@@ -288,7 +288,7 @@ planner_server:
       max_samples: 30000.0
       dist_th: 10.0
       max_dist: 0.5
-      resolution: 0.05
+      seed: -1
 
 smoother_server:
   ros__parameters:
