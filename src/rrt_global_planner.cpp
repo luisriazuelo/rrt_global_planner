@@ -296,6 +296,17 @@ void RRTPlanner::visualizeTree(const std::vector<TreeNode> & tree)
   marker_pub_->publish(m);   // same id on every call -> RViz replaces the old tree
 }
 
+void RRTPlanner::fillMarkerMsg(const std::string frame_id, const std::string ns, const int id,
+                    const int type, visualization_msgs::msg::Marker& msg){
+    
+    msg.header.frame_id = frame_id;
+    msg.header.stamp = node_->now();
+    msg.ns = ns;
+    msg.action = visualization_msgs::msg::Marker::ADD;
+    msg.pose.orientation.w = 1.0;
+    msg.id = id;
+    msg.type = type;
+}
 
 }  // namespace rrt_global_planner
 
